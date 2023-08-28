@@ -1,3 +1,20 @@
+use std::io;
+use std::io::Write;
+// OR
+use std::io::{self, Write};
+
+// Glob operator
+use std::collections::*;
+
+
+mod front_of_house;
+
+pub use crate::front_of_house::hosting;
+
+pub fn eat_at_restaurant() {
+    hosting::add_to_waitlist();
+}
+
 mod back_of_house {
     pub struct Breakfast {
         pub toast: String,
@@ -14,9 +31,11 @@ mod back_of_house {
     }
 }
 
+pub use crate::back_of_house::Breakfast;
+
 pub fn eat_at_restaurant() {
     // Order a breakfast in the summer with Rye toast
-    let mut meal = back_of_house::Breakfast::summer("Rye");
+    let mut meal = Breakfast::summer("Rye");
     // Change our mind about what bread we'd like
     meal.toast = String::from("Wheat");
     println!("I'd like {} toast please", meal.toast);
