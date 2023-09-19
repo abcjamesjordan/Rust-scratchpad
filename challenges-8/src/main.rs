@@ -29,6 +29,14 @@ fn main() {
     }
     println!("Mode of vector is {}, and occurs {} times", max_key, max_value);
 
+    println!("\n8.2: convert strings to pig latin:");
+
+    let testing_word = "apple";
+    println!("Testing pig latin of word {}:", testing_word);
+
+    let testing_word_pig_latin = pig_latin(testing_word);
+    println!("Pig latin results {}:", testing_word_pig_latin);
+
     // for value in v {
     //     v_hash_map.entry(value)
     // }
@@ -37,7 +45,24 @@ fn main() {
     // ---------------------------------------- //
 
 }
-// #[derive(Debug)]
+
+fn pig_latin(word: &str) -> String {
+    if word.starts_with("a") | word.starts_with("e") |
+    word.starts_with("i") | word.starts_with("o") | word.starts_with("u") {
+        println!("Starts with vowel");
+        let pig_word = format!("{word}-hay");
+        pig_word
+    }
+    else {
+        println!("Starts with consonant");
+        let first_letter = &word[0..1];
+        // let first_letter = word.chars().next().unwrap();
+        let word_last_off: &str = &word[1..];
+        let pig_word = format!("{word_last_off}-{first_letter}ay");
+        pig_word
+    }
+}
+
 fn find_median_value(mut v: Vec<i32>) -> f64 {
     v.sort();
     println!("v: {:?}", v);
