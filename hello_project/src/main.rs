@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use std::io::{BufReader, BufWriter};
 use std::io::prelude::*;
 use std::fs::File;
@@ -7,7 +10,12 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 fn get_header(file_path: &str) -> String {
-    println!("Getting header for file: {}", file_path);
+    if !std::path::Path::new(file_path).exists() {
+        eprintln!("Error: File not found: {}", file_path);
+        std::process::exit(1);
+    } else {
+        println!("Getting header for file: {}", file_path);
+    }
     let f = File::open(file_path).unwrap();
     let f = BufReader::new(f);
     let mut header = String::new();
@@ -65,27 +73,42 @@ fn basic_processing (input_path: &str, header: &str, output_path: &str) -> std::
 }
 
 fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
+    // Count the fields supplied in the header
     let header_length = header.split('|').count();
+    
+    // Open the input file to a variable
     let f = File::open(input_path).unwrap();
+    // Create a buffer reader from the file
     let f = BufReader::new(f);
 
+    // Create a new file for the output
     let temp_file = File::create(output_path)?;
+    // Create a buffer writer from the output file
     let writer = Arc::new(Mutex::new(BufWriter::new(temp_file)));
 
+    // Read the input file into a vector of strings
     let lines: Vec<String> = f.lines().flatten().collect();
+
+    // Create a thread-safe vector to store line numbers with issues
     let non_ascii_line_numbers = Arc::new(Mutex::new(Vec::new()));
     let non_matching_fields_line_numbers = Arc::new(Mutex::new(Vec::new()));
     let empty_lines_line_numbers = Arc::new(Mutex::new(Vec::new()));
 
+    // Process each line in parallel
     lines.par_iter().enumerate().for_each(|(index, line)| {
-        let mut line = line.clone();
         if !line.is_empty() {
+            let mut line = line.clone();
+            // Trim the string of leading and trailing whitespace
             line = line.trim().to_string();
+            // Check if the line contains non-ASCII characters
             if !line.chars().all(|c| c.is_ascii()) {
+                // Remove the non-ASCII characters
                 line.retain(|c| c.is_ascii());
+                // Add the line number to the non-ASCII vector
                 non_ascii_line_numbers.lock().unwrap().push(index + 1);
             }
 
+            // If the line does not match the header length, add the line number to the non-matching fields vector
             let line_length = line.split('|').count();
             if header_length != line_length {
                 non_matching_fields_line_numbers.lock().unwrap().push(index + 1);
@@ -95,6 +118,7 @@ fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std
                 writeln!(writer, "{}", line).unwrap();
             }
         } else {
+            // If the line is empty, add the line number to the empty lines vector
             empty_lines_line_numbers.lock().unwrap().push(index + 1);
         }
     });
@@ -104,18 +128,20 @@ fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std
     let non_matching_fields_lines = Arc::try_unwrap(non_matching_fields_line_numbers).unwrap().into_inner().unwrap();
     let empty_lines_lines = Arc::try_unwrap(empty_lines_line_numbers).unwrap().into_inner().unwrap();
 
+    // Combine the line numbers with the issues type and sort them in ascending order
     let mut combined: Vec<(usize, &str)> = non_ascii_lines.iter()
         .map(|&x| (x, "non-ascii characters removed"))
         .chain(non_matching_fields_lines.iter().map(|&x| (x, "number of fields did not match header")))
         .chain(empty_lines_lines.iter().map(|&x| (x, "empty line skipped")))
         .collect();
-
     combined.sort();
 
+    // Print out the lines with issues
     for (val, id) in combined {
         println!("Line {}: {}", val, id);
     }
 
+    // Return success
     Ok(())
 }
 
