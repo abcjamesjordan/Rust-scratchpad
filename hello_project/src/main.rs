@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::io::{BufReader, BufWriter};
-use std::io::prelude::*;
-use std::fs::File;
-use std::time::Instant;
 use rayon::prelude::*;
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::{BufReader, BufWriter};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 fn get_header(file_path: &str) -> String {
     if !std::path::Path::new(file_path).exists() {
@@ -23,18 +23,16 @@ fn get_header(file_path: &str) -> String {
     for mut line in f.lines().flatten() {
         line.trim().to_string().retain(|c| c.is_ascii());
         line.trim().to_string();
-            if !line.chars().all(|c| c.is_ascii()) {
-                line.retain(|c| c.is_ascii());
-            }
+        if !line.chars().all(|c| c.is_ascii()) {
+            line.retain(|c| c.is_ascii());
+        }
         header = line;
         break;
     }
     header
 }
 
-
-fn basic_processing (input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
-
+fn basic_processing(input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
     let header_length = header.split('|').count();
     let f = File::open(input_path).unwrap();
     let f = BufReader::new(f);
@@ -47,23 +45,20 @@ fn basic_processing (input_path: &str, header: &str, output_path: &str) -> std::
             line.trim().to_string();
             if !line.chars().all(|c| c.is_ascii()) {
                 line.retain(|c| c.is_ascii());
-                println!("Line {}: non-ascii characters removed", index+1);
-            }
-            else {
+                println!("Line {}: non-ascii characters removed", index + 1);
+            } else {
                 // ASCII test passed
             }
-        }
-        else {
-            println!("Line {}: empty line skipped", index+1);
+        } else {
+            println!("Line {}: empty line skipped", index + 1);
             continue;
         }
 
         let line_length = line.split('|').count();
         if header_length != line_length {
-            println!("Line {}: number of fields did not match header", index+1);
+            println!("Line {}: number of fields did not match header", index + 1);
             continue;
-        }
-        else {
+        } else {
             // header length test passed, write to file
             writeln!(writer, "{}", line.trim())?;
         }
@@ -75,7 +70,7 @@ fn basic_processing (input_path: &str, header: &str, output_path: &str) -> std::
 fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
     // Count the fields supplied in the header
     let header_length = header.split('|').count();
-    
+
     // Open the input file to a variable
     let f = File::open(input_path).unwrap();
     // Create a buffer reader from the file
@@ -111,7 +106,10 @@ fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std
             // If the line does not match the header length, add the line number to the non-matching fields vector
             let line_length = line.split('|').count();
             if header_length != line_length {
-                non_matching_fields_line_numbers.lock().unwrap().push(index + 1);
+                non_matching_fields_line_numbers
+                    .lock()
+                    .unwrap()
+                    .push(index + 1);
             } else {
                 // Write the corrected lines to the file
                 let mut writer = writer.lock().unwrap();
@@ -124,14 +122,28 @@ fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std
     });
 
     // Print out the lines with issues
-    let non_ascii_lines = Arc::try_unwrap(non_ascii_line_numbers).unwrap().into_inner().unwrap();
-    let non_matching_fields_lines = Arc::try_unwrap(non_matching_fields_line_numbers).unwrap().into_inner().unwrap();
-    let empty_lines_lines = Arc::try_unwrap(empty_lines_line_numbers).unwrap().into_inner().unwrap();
+    let non_ascii_lines = Arc::try_unwrap(non_ascii_line_numbers)
+        .unwrap()
+        .into_inner()
+        .unwrap();
+    let non_matching_fields_lines = Arc::try_unwrap(non_matching_fields_line_numbers)
+        .unwrap()
+        .into_inner()
+        .unwrap();
+    let empty_lines_lines = Arc::try_unwrap(empty_lines_line_numbers)
+        .unwrap()
+        .into_inner()
+        .unwrap();
 
     // Combine the line numbers with the issues type and sort them in ascending order
-    let mut combined: Vec<(usize, &str)> = non_ascii_lines.iter()
+    let mut combined: Vec<(usize, &str)> = non_ascii_lines
+        .iter()
         .map(|&x| (x, "non-ascii characters removed"))
-        .chain(non_matching_fields_lines.iter().map(|&x| (x, "number of fields did not match header")))
+        .chain(
+            non_matching_fields_lines
+                .iter()
+                .map(|&x| (x, "number of fields did not match header")),
+        )
         .chain(empty_lines_lines.iter().map(|&x| (x, "empty line skipped")))
         .collect();
     combined.sort();
@@ -144,7 +156,6 @@ fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std
     // Return success
     Ok(())
 }
-
 
 fn main() {
     //  -> std::io::Result<()>
