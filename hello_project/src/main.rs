@@ -105,7 +105,8 @@ fn strip_with_parallel_annotation (input_file_path: &str, output_file_path: &str
     }
 
     // Print the line numbers after all lines have been processed
-    let line_numbers = Arc::try_unwrap(line_numbers).unwrap().into_inner().unwrap();
+    let mut line_numbers = Arc::try_unwrap(line_numbers).unwrap().into_inner().unwrap();
+    line_numbers.sort();
     for line_number in line_numbers {
         println!("Removed non-ASCII characters from line {}", line_number);
     }
