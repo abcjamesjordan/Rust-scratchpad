@@ -1,0 +1,12 @@
+[package]
+name = "web-framework"
+version = "0.1.0"
+edition = "2021"
+
+# This sample uses `tokio` runtime.
+# `async-std` is available by feature "rt_async-std".
+
+[dependencies]
+ohkami = { version = "0.19", features = ["rt_tokio"] }
+tokio  = { version = "1",    features = ["full"] }
+chrono = "*"
