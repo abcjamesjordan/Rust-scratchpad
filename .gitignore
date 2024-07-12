@@ -17,3 +17,4 @@ Cargo.lock
 hello_project/data_file.txt
 hello_project/clean.txt
 hello_project/clean_data_file.txt
+/scratch_pad/data
