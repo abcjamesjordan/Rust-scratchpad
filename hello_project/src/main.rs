@@ -1,176 +1,144 @@
-// This project aims to open a file and do some basic operations on it.
-// Goals for the operations include:
-// 1. Print/remove non-ascii characters
-// 2. Print/remove lines with bad number of columns
-// 3. Uppercase a column
-
+use std::io::{BufReader, BufWriter};
+use std::io::prelude::*;
 use std::fs::File;
-// use std::io::{Read, Write}; // used for all at once retain of characters
-use std::io::{BufRead, BufReader, Write, BufWriter};
 use std::time::Instant;
-use rayon::prelude::*; // used for paralell processing
-use std::sync::{Arc, Mutex}; // used for memory locking
+use rayon::prelude::*;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
-fn strip_with_annotation (input_file_path: &str, output_file_path: &str) -> std::io::Result<()> {
-    let start = Instant::now();
+fn get_header(file_path: &str) -> String {
+    println!("Getting header for file: {}", file_path);
+    let f = File::open(file_path).unwrap();
+    let f = BufReader::new(f);
+    let mut header = String::new();
 
-    let file = File::open(input_file_path)?;
-    let reader = BufReader::new(file);
+    for mut line in f.lines().flatten() {
+        line.trim().to_string().retain(|c| c.is_ascii());
+        line.trim().to_string();
+            if !line.chars().all(|c| c.is_ascii()) {
+                line.retain(|c| c.is_ascii());
+            }
+        header = line;
+        break;
+    }
+    header
+}
 
-    let temp_file = File::create(output_file_path)?;
+
+fn basic_processing (input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
+
+    let header_length = header.split('|').count();
+    let f = File::open(input_path).unwrap();
+    let f = BufReader::new(f);
+
+    let temp_file = File::create(output_path)?;
     let mut writer = BufWriter::new(temp_file);
 
-    for (index, line) in reader.lines().enumerate() {
-        match line {
-            Ok(mut line) => {
-                if !line.chars().all(|c| c.is_ascii()) {
-                    println!("Removed non-ASCII characters from line {}", index+1);
-                    line.retain(|c| c.is_ascii());
-                    writeln!(writer, "{}", line)?;
-                } else {
-                    writeln!(writer, "{}", line)?;
-                }
-            },
-            Err(e) => {
-                eprintln!("Failed to read line {}: {}", index+1, e);
+    for (index, mut line) in f.lines().flatten().enumerate() {
+        if !line.is_empty() {
+            line.trim().to_string();
+            if !line.chars().all(|c| c.is_ascii()) {
+                line.retain(|c| c.is_ascii());
+                println!("Line {}: non-ascii characters removed", index+1);
+            }
+            else {
+                // ASCII test passed
             }
         }
-    }
+        else {
+            println!("Line {}: empty line skipped", index+1);
+            continue;
+        }
 
-    let duration = start.elapsed();
-    println!("Non-ASCII processing with basic techniques completed in {:?}.", duration);
+        let line_length = line.split('|').count();
+        if header_length != line_length {
+            println!("Line {}: number of fields did not match header", index+1);
+            continue;
+        }
+        else {
+            // header length test passed, write to file
+            writeln!(writer, "{}", line.trim())?;
+        }
+    }
 
     Ok(())
 }
 
-fn strip_with_parallel_processing (input_file_path: &str, output_file_path: &str) -> std::io::Result<()> {
-    let start = Instant::now();
+fn parallel_processing(input_path: &str, header: &str, output_path: &str) -> std::io::Result<()> {
+    let header_length = header.split('|').count();
+    let f = File::open(input_path).unwrap();
+    let f = BufReader::new(f);
 
-    let file = File::open(input_file_path)?;
-    let reader = BufReader::new(file);
+    let temp_file = File::create(output_path)?;
+    let writer = Arc::new(Mutex::new(BufWriter::new(temp_file)));
 
-    let temp_file = File::create(output_file_path)?;
-    let mut writer = BufWriter::new(temp_file);
+    let lines: Vec<String> = f.lines().flatten().collect();
+    let non_ascii_line_numbers = Arc::new(Mutex::new(Vec::new()));
+    let non_matching_fields_line_numbers = Arc::new(Mutex::new(Vec::new()));
+    let empty_lines_line_numbers = Arc::new(Mutex::new(Vec::new()));
 
-    // Read the file into a Vec<String>
-    let mut lines: Vec<String> = reader.lines()
-        .filter_map(|line| line.ok())
-        .collect();
+    lines.par_iter().enumerate().for_each(|(index, line)| {
+        let mut line = line.clone();
+        if !line.is_empty() {
+            line = line.trim().to_string();
+            if !line.chars().all(|c| c.is_ascii()) {
+                line.retain(|c| c.is_ascii());
+                non_ascii_line_numbers.lock().unwrap().push(index + 1);
+            }
 
-    // Process each line in parallel
-    lines.par_iter_mut().for_each(|line| {
-        if !line.chars().all(|c| c.is_ascii()) {
-            line.retain(|c| c.is_ascii());
+            let line_length = line.split('|').count();
+            if header_length != line_length {
+                non_matching_fields_line_numbers.lock().unwrap().push(index + 1);
+            } else {
+                // Write the corrected lines to the file
+                let mut writer = writer.lock().unwrap();
+                writeln!(writer, "{}", line).unwrap();
+            }
+        } else {
+            empty_lines_line_numbers.lock().unwrap().push(index + 1);
         }
     });
 
-    // Write the processed lines to the output file
-    for line in lines {
-        writeln!(writer, "{}", line)?;
-    }
+    // Print out the lines with issues
+    let non_ascii_lines = Arc::try_unwrap(non_ascii_line_numbers).unwrap().into_inner().unwrap();
+    let non_matching_fields_lines = Arc::try_unwrap(non_matching_fields_line_numbers).unwrap().into_inner().unwrap();
+    let empty_lines_lines = Arc::try_unwrap(empty_lines_line_numbers).unwrap().into_inner().unwrap();
 
-    let duration = start.elapsed();
-    println!("Non-ASCII processing with parallel processing completed in {:?}.", duration);
+    let mut combined: Vec<(usize, &str)> = non_ascii_lines.iter()
+        .map(|&x| (x, "non-ascii characters removed"))
+        .chain(non_matching_fields_lines.iter().map(|&x| (x, "number of fields did not match header")))
+        .chain(empty_lines_lines.iter().map(|&x| (x, "empty line skipped")))
+        .collect();
+
+    combined.sort();
+
+    for (val, id) in combined {
+        println!("Line {}: {}", val, id);
+    }
 
     Ok(())
 }
 
-fn strip_with_parallel_annotation(input_file_path: &str, output_file_path: &str) -> std::io::Result<()> {
+
+fn main() {
+    //  -> std::io::Result<()>
+    // Ok(())
+
+    // Declare constants
+    let path = "data_file.txt";
+    let output_path = "clean_data_file.txt";
+    let header = get_header(path);
+
     // Start a timer
     let start = Instant::now();
 
-    // Open the input file to a variable
-    let file = File::open(input_file_path).map_err(|e| {
-        eprintln!("Failed to open input file: {}", e);
-        e
-    })?;
+    // ~ 24 seconds full file
+    // let _ = basic_processing(&path, &header, &output_path);
 
-    // Create a buffer reader from the file
-    let reader = BufReader::new(file);
+    // ~ 9 seconds full file
+    let _ = parallel_processing(&path, &header, &output_path);
 
-    // Create a new file for the output
-    let temp_file = File::create(output_file_path).map_err(|e| {
-        eprintln!("Failed to create output file: {}", e);
-        e
-    })?;
-
-    // Create a buffer writer for the output file
-    let mut writer = BufWriter::new(temp_file);
-
-    // Read the input file into a loopable vector of strings
-    let mut lines: Vec<String> = reader.lines()
-        .filter_map(|line| line.ok())
-        .collect();
-
-    // Create a thread-safe vector to store line numbers with issues
-    let line_numbers = Arc::new(Mutex::new(Vec::new()));
-
-    // Process each line in parallel
-    lines.par_iter_mut().enumerate().for_each(|(index, line)| {
-        // Check if the line contains non-ASCII characters
-        if !line.chars().all(|c| c.is_ascii()) {
-            // Remove the non-ASCII characters
-            line.retain(|c| c.is_ascii());
-
-            // Add the line number to the vector
-            let mut line_numbers = line_numbers.lock().unwrap();
-            line_numbers.push(index + 1);
-        }
-    });
-
-    // Write the processed lines to the output file
-    for line in lines {
-        writeln!(writer, "{}", line)?;
-    }
-
-    // Print the line numbers after all lines have been processed
-    let mut line_numbers = Arc::try_unwrap(line_numbers).unwrap().into_inner().unwrap();
-    line_numbers.sort();
-    for line_number in line_numbers {
-        println!("Removed non-ASCII characters from line {}", line_number);
-    }
-
-    // Calculate the duration of the process
+    // Stop the timer and print results
     let duration = start.elapsed();
-    println!("Non-ASCII processing with parallel processing annotation completed in {:?}.", duration);
-
-    Ok(())
+    println!("Basic processing completed in {:?}.", duration);
 }
-
-fn main() -> std::io::Result<()> {
-    println!("Hello, project!");
-
-    let input_file_path = "data_file.txt";
-    let output_file_path = "clean_data_file.txt";
-
-    // strip_with_annotation(&input_file_path, &output_file_path)?;
-
-    // strip_with_parallel_processing(&input_file_path, &output_file_path)?;
-
-    strip_with_parallel_annotation(&input_file_path, &output_file_path)?;
-
-    Ok(())
-}
-
-// fn strip_without_annotation (file_path: &str) -> std::io::Result<()> {
-//     // open the file in read-only mode
-//     let mut file = File::open(file_path)?;
-
-//     // read file contents into a string
-//     let mut contents = String::new();
-//     file.read_to_string(&mut contents)?;
-
-//     // retain only ASCII characters
-//     contents.retain(|c| c.is_ascii());
-
-//     // open the file in write mode
-//     // let mut file = File::create(&file_path)?;
-//     let mut clean_file = File::create("clean.txt")?;
-
-//     // write the cleaned file to the same file
-//     clean_file.write_all(contents.as_bytes())?;
-
-//     println!("Successfully removed non-ASCII characters from the file.");
-
-//     Ok(())
-// }
